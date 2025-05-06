@@ -57,31 +57,54 @@ def time_stretch(data, stretch_factor = 1.5):
     
     data["audio"]["array"] = waveform_stretched
     return data
-  
-def overlay_audio(speech_sample, sound_sample, mixing_ratio=1):
-    speech_audio = np.array(speech_sample['audio']['array'])
+    
+def overlay_audio(speech_sample, sound_sample, mixing_ratio=1, start_time=0):
+    """
+    Overlays `sound_sample` onto `speech_sample` starting at `start_time` seconds.
+
+    Args:
+        speech_sample: Dict with keys 'audio' -> {'array', 'sampling_rate'}.
+        sound_sample: Same format as speech_sample.
+        mixing_ratio: Float multiplier for sound_sample volume.
+        start_time: Time in seconds to start overlaying sound_sample.
+
+    Returns:
+        Modified speech_sample with overlaid audio.
+    """
+    speech_audio = np.array(speech_sample['audio']['array'], dtype=np.float32)
     speech_sr = speech_sample['audio']['sampling_rate']
     
-    sound_audio = np.array(sound_sample['audio']['array'])
+    sound_audio = np.array(sound_sample['audio']['array'], dtype=np.float32)
     sound_sr = sound_sample['audio']['sampling_rate']
     
+    # Resample if necessary
     if sound_sr != speech_sr:
         sound_audio = librosa.resample(sound_audio, orig_sr=sound_sr, target_sr=speech_sr)
 
-    sound_audio = sound_audio * mixing_ratio
+    # Scale by mixing ratio
+    sound_audio *= mixing_ratio
+
+    # Determine start sample index
+    start_sample = int(start_time * speech_sr)
     
+    # Create a copy to modify
     mixed_audio = speech_audio.copy()
 
-    sound_audio = sound_audio[:len(speech_audio)] if len(sound_audio) > len(speech_audio) else sound_audio
-    mixed_audio[:len(sound_audio)] += sound_audio
-    
+    # Ensure there's enough room to overlay sound
+    end_sample = min(start_sample + len(sound_audio), len(mixed_audio))
+    overlay_length = end_sample - start_sample
+    if overlay_length > 0:
+        mixed_audio[start_sample:end_sample] += sound_audio[:overlay_length]
+
+    # Normalize if clipping
     if np.max(np.abs(mixed_audio)) > 1.0:
         mixed_audio = mixed_audio / np.max(np.abs(mixed_audio))
     
-    data = speech_sample
-    data['audio']['array'] = mixed_audio
-    data['audio']['sampling_rate'] = speech_sr
+    # Return modified data
+    output = dict(speech_sample)  # shallow copy is enough here
+    output['audio'] = dict(speech_sample['audio'])  # avoid mutating input
+    output['audio']['array'] = mixed_audio
+    output['audio']['sampling_rate'] = speech_sr
     
-    return data
-  
+    return output
   
